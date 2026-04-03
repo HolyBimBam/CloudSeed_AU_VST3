@@ -1219,8 +1219,8 @@ void AudioPluginAudioProcessorEditor::buttonClicked (juce::Button* button)
         if(newVal > 0.5f)   toggleInterpolation(true);
         else                toggleInterpolation(false);
     }
-    
-    processorRef.updateParameters();
+
+    // Note: updateParameters() is called from processBlock() on the audio thread
 }
 
 void AudioPluginAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
@@ -1322,8 +1322,9 @@ void AudioPluginAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
     } else if (slider == &postDiffusionSeedSlider){
            processorRef.postDiffusionSeedSliderValue = postDiffusionSeedSlider.getValue() / 1000000 + 0.001;
     }
-    
-    processorRef.updateParameters();
+
+    // Note: updateParameters() is called from processBlock() on the audio thread
+    // to avoid thread safety issues. The member variables are updated here on the UI thread.
 }
 
 

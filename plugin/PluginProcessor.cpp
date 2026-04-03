@@ -836,8 +836,8 @@ void AudioPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // Sync parameters from treeState (handles automation and preset changes)
-    syncParametersFromTreeState();
+    // Update reverb engine with current parameter values
+    // Note: Member variables are updated by UI thread, we just apply them here
     updateParameters();
 
     // we only process stereo signal, so we clear unused output buffers.
