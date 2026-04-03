@@ -10,11 +10,21 @@
 
 cmake_minimum_required(VERSION 3.15)
 
+# C++ Standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# macOS: Build universal binary for Apple Silicon and Intel
+if(APPLE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures for macOS")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment version")
+endif()
+
 # The top-level CMakeLists.txt file for a project must contain a literal, direct call to the
 # `project()` command. `project()` sets up some helpful variables that describe source/binary
 # directories, and the current project version. This is a standard CMake command.
 
-project(CloudSeedReverb VERSION 0.0.1)
+project(CloudSeedReverb VERSION 0.0.2)
 
 # If you've installed JUCE somehow (via a package manager, or directly using the CMake install
 # target), you'll need to tell this project that it depends on the installed copy of JUCE. If you've
@@ -71,6 +81,9 @@ juce_add_plugin(CloudSeedReverb
 target_sources(CloudSeedReverb PRIVATE
 	    plugin/PluginEditor.cpp
 	    plugin/PluginProcessor.cpp)
+
+# Add include path for audio_engine headers
+target_include_directories(CloudSeedReverb PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # `target_compile_definitions` adds some preprocessor definitions to our target. In a Projucer
 # project, these might be passed in the 'Preprocessor Definitions' field. JUCE modules also make use
 # of compile definitions to switch certain features on/off, so if there's a particular feature you

@@ -14,7 +14,7 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
                      #endif
                        ),
                         treeState(*this,nullptr, "PARAMETERS", createParameterLayout()),
-                        reverb(44100)
+                        reverb(48000)  // Default to 48kHz, will be updated in prepareToPlay
 {
 
     AudioLib::ValueTables::Init();
@@ -746,7 +746,7 @@ bool AudioPluginAudioProcessor::isMidiEffect() const
 
 double AudioPluginAudioProcessor::getTailLengthSeconds() const
 {
-    return 0.0;
+    return 10.0;  // Reverb tail can be very long depending on decay settings
 }
 
 int AudioPluginAudioProcessor::getNumPrograms()
@@ -812,13 +812,11 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported (const BusesLayout& layou
     juce::ignoreUnused (layouts);
     return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    // CloudSeed reverb only supports stereo processing
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
 
-    // This checks if the input layout matches the output layout
+    // Input must match output (stereo in, stereo out)
    #if ! JucePlugin_IsSynth
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
@@ -836,17 +834,20 @@ void AudioPluginAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::ignoreUnused (midiMessages);
 
     juce::ScopedNoDenormals noDenormals;
-    //auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // we only process stero signal, so we clear unused output buffers.
+    // Sync parameters from treeState (handles automation and preset changes)
+    syncParametersFromTreeState();
+    updateParameters();
+
+    // we only process stereo signal, so we clear unused output buffers.
     for (auto i = 2; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // real dsp
-    const float** in_sig =  buffer.getArrayOfReadPointers();
-    float** out_sig =  buffer.getArrayOfWritePointers();
-    reverb.Process(in_sig,out_sig, buffer.getNumSamples());
+    // Copy buffer pointers to arrays with types matching ReverbController::Process
+    const float* inputChannels[2] = { buffer.getReadPointer(0), buffer.getReadPointer(1) };
+    float* outputChannels[2] = { buffer.getWritePointer(0), buffer.getWritePointer(1) };
+    reverb.Process(inputChannels, outputChannels, buffer.getNumSamples());
 }
 
 
@@ -913,6 +914,72 @@ void AudioPluginAudioProcessor::updateParameters()
     reverb.SetParameter(Parameter::Interpolation, interpolationButtonValue);
 }
 
+void AudioPluginAudioProcessor::syncParametersFromTreeState()
+{
+    // Sync manual member variables from treeState
+    // This ensures parameters loaded from presets/state are applied to the reverb engine
+
+    inputMixSliderValue = *treeState.getRawParameterValue("inputMix");
+    predelaySliderValue = *treeState.getRawParameterValue("predelay") / 1000.0f;
+    lowCutSliderValue = *treeState.getRawParameterValue("lowCut");
+    highCutSliderValue = *treeState.getRawParameterValue("highCut");
+
+    dryOutSliderValue = *treeState.getRawParameterValue("dryOut");
+    predelayOutSliderValue = *treeState.getRawParameterValue("predelayOut");
+    earlyOutSliderValue = *treeState.getRawParameterValue("earlyOut");
+    mainOutSliderValue = *treeState.getRawParameterValue("mainOut");
+
+    tapCountSliderValue = *treeState.getRawParameterValue("tapCount");
+    tapLengthSliderValue = *treeState.getRawParameterValue("tapLength") / 500.0f;
+    diffusionDelaySliderValue = *treeState.getRawParameterValue("diffusionDelay");
+    earlyDiffusionModAmountSliderValue = *treeState.getRawParameterValue("earlyDiffusionModAmount") * 0.4f;
+
+    tapGainSliderValue = *treeState.getRawParameterValue("tapGain");
+    tapDecaySliderValue = *treeState.getRawParameterValue("tapDecay");
+    diffusionFeedbackSliderValue = *treeState.getRawParameterValue("diffusionFeedback");
+    earlyDiffusionModRateSliderValue = *treeState.getRawParameterValue("earlyDiffusionModRate");
+
+    lineDelaySliderValue = *treeState.getRawParameterValue("lineDelay");
+    lineModAmountSliderValue = *treeState.getRawParameterValue("lineModAmount") * 0.4f;
+    lateDiffusionDelaySliderValue = *treeState.getRawParameterValue("lateDiffusionDelay");
+    lateDiffusionModAmountSliderValue = *treeState.getRawParameterValue("lateDiffusionModAmount") * 0.4f;
+
+    lineDecaySliderValue = *treeState.getRawParameterValue("lineDecay");
+    lineModRateSliderValue = *treeState.getRawParameterValue("lineModRate");
+    lateDiffusionFeedbackSliderValue = *treeState.getRawParameterValue("lateDiffusionFeedback");
+    lateDiffusionModRateSliderValue = *treeState.getRawParameterValue("lateDiffusionModRate");
+
+    postLowShelfFrequencySliderValue = *treeState.getRawParameterValue("postLowShelfFrequency");
+    postHighShelfFrequencySliderValue = *treeState.getRawParameterValue("postHighShelfFrequency");
+    postCutoffFrequencySliderValue = *treeState.getRawParameterValue("postCutoffFrequency");
+
+    postLowShelfGainSliderValue = *treeState.getRawParameterValue("postLowShelfGain");
+    postHighShelfGainSliderValue = *treeState.getRawParameterValue("postHighShelfGain");
+    crossSeedSliderValue = *treeState.getRawParameterValue("crossSeed");
+
+    tapSeedSliderValue = *treeState.getRawParameterValue("tapSeed") / 1000000.0f + 0.001f;
+    diffusionSeedSliderValue = *treeState.getRawParameterValue("diffusionSeed") / 1000000.0f + 0.001f;
+    delaySeedSliderValue = *treeState.getRawParameterValue("delaySeed") / 1000000.0f + 0.001f;
+    postDiffusionSeedSliderValue = *treeState.getRawParameterValue("postDiffusionSeed") / 1000000.0f + 0.001f;
+
+    lineCountSliderValue = *treeState.getRawParameterValue("lineCount") / 12.0f;
+    diffusionStagesSliderValue = *treeState.getRawParameterValue("diffusionStages") / 8.0f;
+    lateDiffusionStagesSliderValue = *treeState.getRawParameterValue("lateDiffusionStages") / 8.0f;
+
+    diffusionEnabledButtonValue = *treeState.getRawParameterValue("diffusionEnabled");
+    lateDiffusionEnabledButtonValue = *treeState.getRawParameterValue("lateDiffusionEnabled");
+
+    hiPassEnabledButtonValue = *treeState.getRawParameterValue("highPassEnabled");
+    lowPassEnabledButtonValue = *treeState.getRawParameterValue("lowPassEnabled");
+    cutoffEnabledButtonValue = *treeState.getRawParameterValue("cutoffEnabled");
+
+    lowShelfEnabledButtonValue = *treeState.getRawParameterValue("lowShelfEnabled");
+    highShelfEnabledButtonValue = *treeState.getRawParameterValue("highShelfEnabled");
+
+    lateStageTapButtonValue = *treeState.getRawParameterValue("lateStageTap");
+    interpolationButtonValue = *treeState.getRawParameterValue("interpolation");
+}
+
 //==============================================================================
 bool AudioPluginAudioProcessor::hasEditor() const
 {
@@ -940,12 +1007,19 @@ void AudioPluginAudioProcessor::setStateInformation (const void* data, int sizeI
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
-    
+
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
- 
-    if (xmlState.get() != nullptr)
+
+    if (xmlState != nullptr)
+    {
         if (xmlState->hasTagName (treeState.state.getType()))
+        {
             treeState.replaceState (juce::ValueTree::fromXml (*xmlState));
+            // Sync member variables from loaded state and update reverb engine
+            syncParametersFromTreeState();
+            updateParameters();
+        }
+    }
 }
 
 //==============================================================================

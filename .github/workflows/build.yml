@@ -1,0 +1,224 @@
+name: Build and Validate
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+  CMAKE_BUILD_PARALLEL_LEVEL: 3
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: List built artifacts
+        run: |
+          echo "=== AU Plugin ==="
+          ls -la build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/AU/ || echo "AU not found"
+          echo "=== VST3 Plugin ==="
+          ls -la build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/VST3/ || echo "VST3 not found"
+          echo "=== Standalone ==="
+          ls -la build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/Standalone/ || echo "Standalone not found"
+
+      - name: Verify Universal Binary
+        run: |
+          echo "=== Checking architectures ==="
+          VST3_BINARY=$(find build -name "CloudSeedReverb" -path "*/VST3/*" -type f | head -1)
+          if [ -n "$VST3_BINARY" ]; then
+            lipo -info "$VST3_BINARY"
+          else
+            echo "VST3 binary not found"
+          fi
+
+      - name: Download pluginval
+        run: |
+          curl -LO https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip pluginval_macOS.zip
+
+      - name: Validate VST3 with pluginval
+        run: |
+          VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
+          if [ -n "$VST3_PATH" ]; then
+            echo "Validating: $VST3_PATH"
+            ./pluginval.app/Contents/MacOS/pluginval --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+          else
+            echo "VST3 not found, skipping validation"
+            exit 1
+          fi
+
+      - name: Validate AU with auval
+        run: |
+          # List available Audio Units
+          auval -a | grep -i cloud || echo "Plugin not registered yet"
+          # Note: AU validation requires the plugin to be installed in ~/Library/Audio/Plug-Ins/Components/
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudSeed-VST3-macOS
+          path: build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/VST3/
+
+      - name: Upload AU Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudSeed-AU-macOS
+          path: build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/AU/
+
+      - name: Upload Standalone Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudSeed-Standalone-macOS
+          path: build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/Standalone/
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Download pluginval
+        shell: bash
+        run: |
+          curl -LO https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          unzip pluginval_Windows.zip
+
+      - name: Validate VST3 with pluginval
+        shell: bash
+        run: |
+          VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
+          if [ -n "$VST3_PATH" ]; then
+            echo "Validating: $VST3_PATH"
+            ./pluginval.exe --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+          else
+            echo "VST3 not found"
+            exit 1
+          fi
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudSeed-VST3-Windows
+          path: build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/VST3/
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            ladspa-sdk \
+            libcurl4-openssl-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libwebkit2gtk-4.0-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Setup virtual display for pluginval
+        run: |
+          sudo apt-get install -y xvfb
+          Xvfb :99 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Download pluginval
+        run: |
+          curl -LO https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
+          unzip pluginval_Linux.zip
+          chmod +x pluginval
+
+      - name: Validate VST3 with pluginval
+        run: |
+          VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
+          if [ -n "$VST3_PATH" ]; then
+            echo "Validating: $VST3_PATH"
+            ./pluginval --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+          else
+            echo "VST3 not found"
+            exit 1
+          fi
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudSeed-VST3-Linux
+          path: build/CloudSeedReverb_artefacts/${{ env.BUILD_TYPE }}/VST3/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create zip archives
+        run: |
+          cd artifacts
+          for dir in */; do
+            zip -r "${dir%/}.zip" "$dir"
+          done
+          ls -la *.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}

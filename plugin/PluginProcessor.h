@@ -50,6 +50,7 @@ public:
 
     
     void updateParameters();
+    void syncParametersFromTreeState();  // Sync manual variables from treeState (for state loading/automation)
 
     int currentProgramNumber = {0};
     
