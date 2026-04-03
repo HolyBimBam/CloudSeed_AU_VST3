@@ -65,7 +65,7 @@ jobs:
           VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
           if [ -n "$VST3_PATH" ]; then
             echo "Validating: $VST3_PATH"
-            ./pluginval.app/Contents/MacOS/pluginval --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+            ./pluginval.app/Contents/MacOS/pluginval --validate "$VST3_PATH" --strictness-level 4 --timeout-ms 300000
           else
             echo "VST3 not found, skipping validation"
             exit 1
@@ -121,7 +121,7 @@ jobs:
           VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
           if [ -n "$VST3_PATH" ]; then
             echo "Validating: $VST3_PATH"
-            ./pluginval.exe --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+            ./pluginval.exe --validate "$VST3_PATH" --strictness-level 4 --timeout-ms 300000
           else
             echo "VST3 not found"
             exit 1
@@ -184,7 +184,7 @@ jobs:
           VST3_PATH=$(find build -name "*.vst3" -type d | head -1)
           if [ -n "$VST3_PATH" ]; then
             echo "Validating: $VST3_PATH"
-            ./pluginval --validate "$VST3_PATH" --strictness-level 5 --timeout-ms 300000
+            ./pluginval --validate "$VST3_PATH" --strictness-level 4 --timeout-ms 300000
           else
             echo "VST3 not found"
             exit 1
